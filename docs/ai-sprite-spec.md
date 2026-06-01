@@ -1,4 +1,4 @@
-# AI Sprite Generation Spec — Dune: Battle of a Dynasty
+# AI Sprite Generation Spec — Dune Experiments
 
 Инструкция для генерации спрайтов юнитов/зданий через AI. Цель: спрайты **чётко
 считываются на экране, видны детали**, стиль — пиксель-арт уровня StarCraft 1 /
