@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dune: Battle of a Dynasty</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: #0a0a0a;
+      color: #d4a857;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      height: 100%;
+      user-select: none;
+    }
+    #wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      padding: 8px;
+    }
+    #topbar {
+      width: 1200px;
+      background: #1a1208;
+      border: 2px solid #5c4a33;
+      padding: 6px 14px;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      font-size: 13px;
+      letter-spacing: 1px;
+    }
+    #topbar .lbl { color: #8a6a3a; }
+    #topbar .val { color: #ffc870; font-weight: bold; }
+    #topbar .pwarn { color: #ff7050; }
+    #topbar .flex { flex: 1; }
+    #main {
+      display: flex;
+      width: 1200px;
+      height: 600px;
+      border: 2px solid #5c4a33;
+      border-top: none;
+    }
+    /* PixiJS canvas injected here */
+    #game-container canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #sidebar {
+      width: 240px;
+      background: #150e06;
+      border-left: 2px solid #5c4a33;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .tabs { display: flex; background: #0e0a04; border-bottom: 1px solid #5c4a33; }
+    .tab {
+      flex: 1;
+      background: transparent;
+      color: #8a6a3a;
+      border: none;
+      border-right: 1px solid #5c4a33;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 12px;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+    .tab:last-child { border-right: none; }
+    .tab.active { background: #3a2818; color: #ffc870; }
+    .tabpanel { flex: 1; overflow-y: auto; padding: 6px; }
+    .tabpanel.hidden { display: none; }
+    .bbtn {
+      display: block; width: 100%;
+      background: #1a1208;
+      color: #d4a857;
+      border: 1px solid #5c4a33;
+      padding: 6px 8px;
+      margin-bottom: 4px;
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: 1px;
+      cursor: pointer;
+      text-align: left;
+      line-height: 1.3;
+      transition: all .1s;
+    }
+    .bbtn:hover:not(:disabled) { background: #2a1c10; border-color: #d4a857; }
+    .bbtn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .bbtn .nm { color: #ffc870; font-weight: bold; }
+    .bbtn .meta { color: #8a6a3a; font-size: 10px; }
+    .bbtn.placing { background: #3a2818; border-color: #ffc870; color: #ffc870; }
+    #minimap-wrap {
+      flex-shrink: 0;
+      padding: 6px 6px 0;
+      background: #0e0a04;
+      border-bottom: 1px solid #5c4a33;
+    }
+    #minimap-canvas {
+      display: block;
+      width: 228px;
+      height: 126px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      cursor: crosshair;
+    }
+    #minimap-label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #5c4a33;
+      text-align: center;
+      padding: 2px 0 4px;
+    }
+    #prodq {
+      padding: 6px;
+      border-top: 1px solid #5c4a33;
+      background: #0e0a04;
+      font-size: 10px;
+      min-height: 50px;
+      max-height: 90px;
+      overflow-y: auto;
+    }
+    #prodq .row { margin-bottom: 3px; color: #8a6a3a; }
+    #prodq .row.act { color: #ffc870; }
+    #prodq .pbar { height: 3px; background: #5c4a33; margin-top: 2px; }
+    #prodq .pbar i { display: block; height: 100%; background: #ff8c2a; }
+
+    #palace-panel {
+      padding: 8px;
+      border-top: 2px solid #ffc870;
+      background: linear-gradient(180deg, #2a1c08, #0e0a04);
+      font-size: 11px;
+      letter-spacing: 1px;
+    }
+    #palace-panel.hidden { display: none; }
+    #palace-panel .ptitle {
+      color: #ffc870; font-weight: bold;
+      margin-bottom: 4px; letter-spacing: 2px;
+    }
+    #palace-panel .pdesc { color: #8a6a3a; font-size: 10px; margin-bottom: 6px; }
+    #palace-panel .pbar { height: 6px; background: #5c4a33; margin-bottom: 6px; }
+    #palace-panel .pbar i { display: block; height: 100%; background: #ff8c2a; }
+    #palace-panel button {
+      width: 100%;
+      background: #3a2818; color: #ffc870;
+      border: 1px solid #ffc870;
+      padding: 6px;
+      font-family: inherit; font-size: 11px;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+    #palace-panel button:hover:not(:disabled) {
+      background: #ff8c2a; color: #1a1208;
+    }
+    #palace-panel button.targeting {
+      background: #cc2424; color: #ffe0a0;
+      border-color: #ff5050;
+    }
+    #palace-panel button:disabled {
+      color: #5c4a33; border-color: #5c4a33;
+      background: #1a1208; cursor: default;
+    }
+
+    #help-btn {
+      background: #1a1208; color: #d4a857;
+      border: 1px solid #5c4a33;
+      padding: 5px 12px;
+      font-family: inherit; font-size: 11px;
+      cursor: pointer; letter-spacing: 1px;
+    }
+    #help-btn:hover { background: #2a1c10; border-color: #d4a857; }
+
+    #endmatch-btn {
+      background: #2a1208; color: #ff8866;
+      border: 1px solid #6a3320;
+      padding: 5px 12px;
+      font-family: inherit; font-size: 11px;
+      cursor: pointer; letter-spacing: 1px;
+      margin-left: 6px;
+    }
+    #endmatch-btn:hover { background: #4a2010; border-color: #ff6644; color: #ffaa88; }
+
+    #helpmodal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9;
+    }
+    #helpmodal.hidden { display: none; }
+    #helpmodal .panel {
+      background: #1a1208; border: 2px solid #5c4a33;
+      padding: 24px 28px; max-width: 680px;
+      color: #d4a857; font-size: 13px; line-height: 1.7;
+    }
+    #helpmodal h2 { margin: 0 0 14px; color: #ffc870; letter-spacing: 3px; font-size: 18px; }
+    #helpmodal kbd {
+      background: #3a2818; color: #ffc870;
+      padding: 1px 6px; border: 1px solid #5c4a33;
+      border-radius: 2px; font-family: inherit; font-size: 11px; margin: 0 2px;
+    }
+    #helpmodal .close {
+      margin-top: 18px; background: #3a2818; color: #ffc870;
+      border: 1px solid #5c4a33; padding: 6px 14px;
+      font-family: inherit; cursor: pointer; letter-spacing: 2px;
+    }
+    #menu {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.95);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 10;
+    }
+    #menu.hidden { display: none; }
+    #menu h1 {
+      font-size: 54px; color: #ffc870;
+      letter-spacing: 8px; margin: 0 0 4px;
+      text-shadow: 4px 4px 0 #5c2a08;
+    }
+    #menu .sub { color: #8a6a3a; letter-spacing: 3px; margin-bottom: 22px; font-size: 12px; }
+    #menu .factions { display: flex; gap: 18px; }
+    #menu .fbtn {
+      background: #1a1208; color: #d4a857;
+      border: 2px solid #5c4a33;
+      padding: 14px 24px; font-family: inherit;
+      font-size: 14px; cursor: pointer;
+      letter-spacing: 3px; min-width: 180px; text-align: center;
+    }
+    #menu .fbtn:hover { background: #2a1c10; border-color: #d4a857; color: #ffc870; }
+    #menu .fbtn.sel { background: #3a2818; border-color: #ffc870; color: #ffc870; }
+    #menu .fbtn .desc { display: block; color: #6a4a2a; font-size: 10px; margin-top: 6px; letter-spacing: 1px; }
+    #menu .info { margin-top: 18px; color: #6a4a2a; font-size: 11px; max-width: 560px; text-align: center; line-height: 1.6; }
+
+    #menu .section {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 8px; margin-top: 18px;
+    }
+    #menu .section .label {
+      color: #8a6a3a; letter-spacing: 4px; font-size: 11px;
+    }
+    #menu .options { display: flex; gap: 10px; }
+    #menu .opt {
+      background: #1a1208; color: #d4a857;
+      border: 1px solid #5c4a33;
+      padding: 8px 16px; font-family: inherit;
+      font-size: 12px; cursor: pointer;
+      letter-spacing: 2px; min-width: 140px; text-align: center;
+    }
+    #menu .opt:hover { background: #2a1c10; border-color: #d4a857; color: #ffc870; }
+    #menu .opt.sel { background: #3a2818; border-color: #ffc870; color: #ffc870; }
+
+    #menu #start-btn {
+      margin-top: 24px;
+      background: #3a2818; color: #ffc870;
+      border: 2px solid #ffc870;
+      padding: 14px 40px; font-family: inherit;
+      font-size: 16px; cursor: pointer;
+      letter-spacing: 6px;
+    }
+    #menu #start-btn:hover:not(:disabled) { background: #ff8c2a; color: #1a1208; }
+    #menu #start-btn:disabled {
+      color: #5c4a33; border-color: #5c4a33;
+      background: #1a1208; cursor: not-allowed;
+    }
+
+    #endscreen {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 11;
+    }
+    #endscreen h1 { font-size: 64px; letter-spacing: 10px; margin: 0; }
+    #endscreen.win h1 { color: #ffd870; text-shadow: 4px 4px 0 #5c4a08; }
+    #endscreen.lose h1 { color: #ff6644; text-shadow: 4px 4px 0 #5c1a08; }
+    #endscreen button {
+      margin-top: 32px; background: #1a1208; color: #d4a857;
+      border: 2px solid #5c4a33; padding: 12px 22px;
+      font-family: inherit; font-size: 14px; cursor: pointer; letter-spacing: 3px;
+    }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: #1a1208; border: 1px solid #5c4a33;
+      color: #ffc870; padding: 8px 16px;
+      font-size: 12px; letter-spacing: 1px;
+      z-index: 8; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar">
+    <span class="lbl">SPICE</span><span class="val" id="spice">0</span>
+    <span class="lbl">POWER</span><span class="val" id="power">0/0</span>
+    <span class="lbl">FACTION</span><span class="val" id="faction">—</span>
+    <span class="flex"></span>
+    <span class="lbl">SEL</span><span class="val" id="selinfo">—</span>
+    <span class="flex"></span>
+    <button id="help-btn">? HELP</button>
+    <button id="endmatch-btn">END MATCH</button>
+  </div>
+  <div id="main">
+    <div id="game-container"></div>
+    <div id="sidebar">
+      <div id="minimap-wrap">
+        <canvas id="minimap-canvas" width="228" height="126"></canvas>
+        <div id="minimap-label">RADAR</div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="build">BUILD</button>
+        <button class="tab" data-tab="units">UNITS</button>
+      </div>
+      <div class="tabpanel" id="tab-build"></div>
+      <div class="tabpanel hidden" id="tab-units"></div>
+      <div id="palace-panel" class="hidden"></div>
+      <div id="prodq"></div>
+    </div>
+  </div>
+</div>
+
+<div id="helpmodal" class="hidden">
+  <div class="panel">
+    <h2>DUNE — CONTROLS</h2>
+    <p>
+      <kbd>LMB</kbd> click — select. Drag — box-select group.<br>
+      <kbd>RMB</kbd> on sand/rock — move. <kbd>RMB</kbd> on enemy — attack.<br>
+      <kbd>1</kbd>–<kbd>5</kbd> — quick-train Infantry / Trike / Tank / Special / Harvester.<br>
+      <kbd>C</kbd> — select Carryall. <kbd>H</kbd> — select Harvester.<br>
+      <kbd>WASD</kbd> / <kbd>Arrows</kbd> — pan camera. Click minimap to jump.<br>
+      <kbd>Space</kbd> — pause. <kbd>Esc</kbd> — cancel / deselect.<br>
+      <br>
+      <b style="color:#ffc870">POWER.</b> Each Wind Trap gives +8. If consumption &gt; output, production slows to 30%.<br>
+      <b style="color:#ffc870">CHAIN.</b> Refinery → Barracks &amp; Light Factory → Heavy Factory → Hi-Tech.<br>
+      <b style="color:#ffc870">WIN.</b> Destroy the enemy Construction Yard.
+    </p>
+    <button class="close" id="help-close">CLOSE</button>
+  </div>
+</div>
+
+<div id="menu">
+  <h1>DUNE</h1>
+  <div class="sub">BATTLE OF A DYNASTY · SKIRMISH</div>
+  <div class="factions">
+    <button class="fbtn" data-faction="atreides">ATREIDES<span class="desc">Honour · Sonic Tank</span></button>
+    <button class="fbtn" data-faction="harkonnen">HARKONNEN<span class="desc">Brutality · Devastator</span></button>
+    <button class="fbtn" data-faction="ordos">ORDOS<span class="desc">Cunning · Saboteur</span></button>
+  </div>
+
+  <div class="section">
+    <div class="label">MAP SIZE</div>
+    <div class="options">
+      <button class="opt" data-group="mapsize" data-value="small">SMALL · 64×40</button>
+      <button class="opt" data-group="mapsize" data-value="medium">MEDIUM · 96×52</button>
+      <button class="opt" data-group="mapsize" data-value="large">LARGE · 128×72</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">AI DIFFICULTY</div>
+    <div class="options">
+      <button class="opt" data-group="ailevel" data-value="easy">EASY</button>
+      <button class="opt" data-group="ailevel" data-value="medium">MEDIUM</button>
+      <button class="opt" data-group="ailevel" data-value="hard">HARD</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">SANDWORMS</div>
+    <div class="options">
+      <button class="opt" data-group="worms" data-value="on">ON</button>
+      <button class="opt" data-group="worms" data-value="off">OFF</button>
+    </div>
+  </div>
+
+  <button id="start-btn" disabled>START BATTLE</button>
+
+  <div class="info">
+    Mine spice. Build the chain. Crush the enemy Yard.
+  </div>
+</div>
+
+<div id="endscreen">
+  <h1 id="endmsg">VICTORY</h1>
+  <button onclick="location.reload()">PLAY AGAIN</button>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

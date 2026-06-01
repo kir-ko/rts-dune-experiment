@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.command
+Archive.zip
+.DS_Store
+.claude/
