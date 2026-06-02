@@ -10,7 +10,7 @@ import {
   createScene, syncScene,
   renderSelectionBox, renderPauseOverlay,
 } from './render/renderer.js';
-import { game, createGame, type SkirmishOptions, DEFAULT_SKIRMISH } from './state/gameState.js';
+import { game, createGame, makeUnit, type SkirmishOptions, DEFAULT_SKIRMISH } from './state/gameState.js';
 import { findPath } from './systems/pathfinding.js';
 import { updateFog } from './systems/fog.js';
 import { updateProduction } from './systems/production.js';
@@ -25,6 +25,7 @@ import { updateRepair } from './systems/repair.js';
 import { updateWorms } from './systems/sandworm.js';
 import { updateSpiceBlooms } from './systems/spiceBloom.js';
 import { powerOf } from './systems/power.js';
+import { spawnDust, spawnExplosion } from './systems/fx.js';
 import { statsFor } from './constants/units.js';
 import { updateHud, updateProductionPanel } from './ui/hud.js';
 import { initSidebar, rebuildSidebar, updateBuildButtons } from './ui/sidebar.js';
@@ -84,6 +85,14 @@ export function fireDeathHandAt(wx: number, wy: number): void {
 // ── Sprites & scene ───────────────────────────────────────────
 initSprites(app);
 const layers = createScene(app);
+
+// Dev-only: expose live game state for debugging in the console / preview.
+// Stripped from production builds by Vite's dead-code elimination.
+if (import.meta.env.DEV) {
+  const w = window as unknown as Record<string, unknown>;
+  w['__game'] = () => game;
+  w['__makeUnit'] = makeUnit;
+}
 
 // ── Sidebar ───────────────────────────────────────────────────
 initSidebar(startPlacing, cancelPlacing);
@@ -236,8 +245,12 @@ function tick(dt: number): void {
   if (state.wormsEnabled) updateWorms(state, dt);
   updateSpiceBlooms(state, dt);
 
-  // Update effects timer
-  for (const f of state.fx) f.t += dt;
+  // Update effects: advance lifetime + apply drift velocity (smoke rises, embers fly)
+  for (const f of state.fx) {
+    f.t += dt;
+    if (f.vx) f.x += f.vx * dt;
+    if (f.vy) f.y += f.vy * dt;
+  }
 
   // Update units
   const powP = powerOf(state.faction, state);
@@ -289,7 +302,7 @@ function tick(dt: number): void {
         if (d < 0.6) {
           // Detonate — deal lethal damage so damageEntity triggers victory checks
           damageEntity(state, attTarget, attTarget.maxHp + 1, u);
-          state.fx.push({ x: tc.x, y: tc.y, scale: 2.0, t: 0, life: 0.9, kind: 'expl' });
+          spawnExplosion(state, tc.x, tc.y, 2.0);
           u.dead = true;
         } else {
           // Run toward the building
@@ -383,6 +396,9 @@ function tick(dt: number): void {
     }
   }
 
+  // Sand dust trails behind moving ground vehicles (purely visual).
+  emitDustTrails(state, dt);
+
   // Crush pass: tracked vehicles run over enemy foot units. Must run BEFORE
   // separation, otherwise SEP keeps them apart and crush never triggers.
   updateCrush(state);
@@ -396,6 +412,29 @@ function tick(dt: number): void {
   state.selection = state.selection.filter(id =>
     state.units.some(u => u.id === id) || state.buildings.some(b => b.id === id),
   );
+}
+
+// ── Vehicle dust trails ───────────────────────────────────────
+// Tracked / wheeled units kick up sand while moving on soft terrain.
+// Foot units (infantry, fremen, sardaukar, saboteur) leave no trail.
+const DUSTY_KINDS = new Set<string>([
+  'trike', 'tank', 'siegeTank', 'launcher', 'harvester', 'stealthTank', 'special',
+]);
+function emitDustTrails(state: GameState, dt: number): void {
+  for (const u of state.units) {
+    if (u.dead || u.carried || u.docked) continue;
+    if (!DUSTY_KINDS.has(u.kind)) continue;
+    if (u.kind === 'special' && u.faction === 'ordos') continue; // saboteur is on foot
+    const moving = !!u.target || (u.path != null && u.path.length > 0);
+    if (!moving) continue;
+    // No plume on solid rock — only soft sand / dune / spice kicks up dust.
+    const tx = Math.floor(u.x), ty = Math.floor(u.y);
+    const tile = state.map[ty]?.[tx];
+    if (!tile || tile.type === 'rock') continue;
+    if (Math.random() < dt * 6) {
+      spawnDust(state, u.x - Math.cos(u.dir) * 0.4, u.y - Math.sin(u.dir) * 0.4);
+    }
+  }
 }
 
 // ── Unit separation ───────────────────────────────────────────

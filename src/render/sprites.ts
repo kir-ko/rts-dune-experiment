@@ -55,58 +55,91 @@ function rng(seed: number) {
 
 // ── Tiles ─────────────────────────────────────────────────────
 function generateTiles(): void {
-  // Sand variants
+  // ── Sand: cohesive warm desert, textured with fine wind-blown grain ──
+  // Variant base tones are kept close so the field reads as one smooth desert
+  // (less harsh checkerboard); per-tile grain provides the texture instead.
+  const sandBase = [0xcba062, 0xc69a5a, 0xcfa468, 0xc59556];
   for (let v = 0; v < 4; v++) {
     const g = new Graphics();
-    pxRect(g, 0, 0, TILE, TILE, C.sand[v]!);
+    pxRect(g, 0, 0, TILE, TILE, sandBase[v]!);
     const r = rng((v + 1) * 1337);
-    for (let i = 0; i < 8; i++) {
+    // Fine grain — a sprinkle of lighter glints and darker flecks
+    for (let i = 0; i < 20; i++) {
       pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1,
-        v % 2 ? C.sand[(v + 1) % 4]! : C.sand[(v + 2) % 4]!);
+        r() < 0.5 ? 0xe0c285 : 0xb07f3a);
+    }
+    // Occasional tiny pebble with a sun-lit top edge
+    for (let i = 0; i < 2; i++) {
+      if (r() < 0.55) {
+        const px = Math.floor(r() * (TILE - 2)), py = Math.floor(r() * (TILE - 2));
+        pxRect(g, px, py, 2, 2, 0x8a6a3a);
+        pxRect(g, px, py, 2, 1, 0xba9258);
+      }
     }
     storeAs(`tile_sand${v}`, g);
   }
 
-  // Dune
+  // ── Dune: wind-sculpted ripples (scattered on the map, so no banding) ──
   {
     const g = new Graphics();
-    pxRect(g, 0, 0, TILE, TILE, C.sand[1]);
-    for (let i = 0; i < TILE; i++) {
-      const y = Math.floor(8 + Math.sin(i * 0.6) * 3);
-      pxRect(g, i, y, 1, 2, C.dune);
-      pxRect(g, i, y - 1, 1, 1, 0xbc9040);
+    pxRect(g, 0, 0, TILE, TILE, 0xc99a56);
+    // Two stacked sine ripples: shadowed trough + sun-lit crest
+    for (let row = 0; row < 2; row++) {
+      const baseY = 6 + row * 9;
+      for (let x = 0; x < TILE; x++) {
+        const y = Math.floor(baseY + Math.sin((x + row * 5) * 0.5) * 2.5);
+        pxRect(g, x, y, 1, 2, 0xa87830);       // shadow side
+        pxRect(g, x, y - 1, 1, 1, 0xe3c488);   // lit crest
+      }
     }
+    const r = rng(9999);
+    for (let i = 0; i < 10; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xd8b878);
     storeAs('tile_dune', g);
   }
 
-  // Rock variants
+  // ── Rock: cohesive plateau with cracks + mineral glints ──
+  const rockBase = [0x685440, 0x5c4a38, 0x524130];
   for (let v = 0; v < 3; v++) {
     const g = new Graphics();
-    pxRect(g, 0, 0, TILE, TILE, C.rock[v]!);
+    pxRect(g, 0, 0, TILE, TILE, rockBase[v]!);
     const r = rng((v + 7) * 9301);
-    for (let i = 0; i < 14; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 1, 0x2e2014);
-    for (let i = 0; i < 6; i++)  pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0x7a6244);
+    // Low-contrast mottled stone patches
+    for (let i = 0; i < 10; i++) {
+      pxRect(g, Math.floor(r() * (TILE - 1)), Math.floor(r() * (TILE - 1)), 2, 2,
+        r() < 0.5 ? 0x4a3a2a : 0x76624a);
+    }
+    // Dark cracks with a lit lower lip (suggests depth)
+    for (let i = 0; i < 4; i++) {
+      const cx = Math.floor(r() * (TILE - 6)), cy = Math.floor(r() * (TILE - 2));
+      const len = 3 + Math.floor(r() * 5);
+      pxRect(g, cx, cy, len, 1, 0x2e2418);
+      pxRect(g, cx, cy + 1, len, 1, 0x7a6650);
+    }
+    // Bright mineral specks
+    for (let i = 0; i < 3; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0x8a7558);
     storeAs(`tile_rock${v}`, g);
   }
 
-  // Spice variants — clearly orange-tinted to stand out on sand
+  // ── Spice: glowing golden-orange deposits ──
   {
-    // spice0: scattered deposits
+    // spice0: scattered deposits over warm sand
     const g = new Graphics();
-    pxRect(g, 0, 0, TILE, TILE, 0xc8903c); // warm orange-sand base
+    pxRect(g, 0, 0, TILE, TILE, 0xc98a3c);
     const r = rng(1 * 8419);
-    for (let i = 0; i < 28; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 1, C.spice);
-    for (let i = 0; i < 14; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xffb060);
+    for (let i = 0; i < 26; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 1, 0xf59a2e);
+    for (let i = 0; i < 16; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xffc65a);
+    for (let i = 0; i < 6; i++)  pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xffe89a);
     storeAs('tile_spice0', g);
   }
   {
-    // spice1: dense spice field — deep orange
+    // spice1: dense, rich deep-orange field with bright sparkle
     const g = new Graphics();
-    pxRect(g, 0, 0, TILE, TILE, 0xd0721a); // rich orange base
+    pxRect(g, 0, 0, TILE, TILE, 0xcc6e18);
     const r = rng(2 * 8419);
-    for (let i = 0; i < 42; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 2, C.spice2);
-    for (let i = 0; i < 20; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xffe060);
-    for (let i = 0; i < 10; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 1, 0xff4000);
+    for (let i = 0; i < 40; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 2, 0xf06010);
+    for (let i = 0; i < 22; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xffd24a);
+    for (let i = 0; i < 10; i++) pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 1, 1, 0xfff0a0);
+    for (let i = 0; i < 6; i++)  pxRect(g, Math.floor(r() * TILE), Math.floor(r() * TILE), 2, 1, 0xc02000);
     storeAs('tile_spice1', g);
   }
 }

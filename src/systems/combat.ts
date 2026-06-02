@@ -3,10 +3,7 @@ import { statsFor } from '../constants/units.js';
 import { BUILD_DEFS } from '../constants/buildings.js';
 import { buildingCenter } from '../state/gameState.js';
 import { isCrushable } from './crush.js';
-
-function spawnExplosion(state: GameState, x: number, y: number, scale: number): void {
-  state.fx.push({ x, y, scale, t: 0, life: 0.6, kind: 'expl' });
-}
+import { spawnExplosion, spawnImpact, spawnMuzzle } from './fx.js';
 
 export function damageEntity(
   state: GameState, ent: Unit | Building, dmg: number,
@@ -78,10 +75,13 @@ export function fireProjectile(
   const tc = 'tx' in to ? buildingCenter(to) : { x: to.x, y: to.y };
   const tx = tc.x + (scatter > 0 ? (Math.random() - 0.5) * 2 * scatter : 0);
   const ty = tc.y + (scatter > 0 ? (Math.random() - 0.5) * 2 * scatter : 0);
+  const dir = Math.atan2(ty - from.y, tx - from.x);
+  // Muzzle flash at the barrel tip (a little ahead of the body centre)
+  spawnMuzzle(state, from.x + Math.cos(dir) * 0.55, from.y + Math.sin(dir) * 0.55, dir);
   state.projectiles.push({
     x: from.x, y: from.y,
     tx, ty,
-    dir: Math.atan2(ty - from.y, tx - from.x),
+    dir,
     targetId: to.id,
     sourceId: from.id,
     sourceFaction: from.faction,
@@ -100,10 +100,12 @@ export function fireBuildingProjectile(state: GameState, from: Building, to: Uni
   if (!w) return;
   const c = buildingCenter(from);
   const tc = 'tx' in to ? buildingCenter(to) : { x: to.x, y: to.y };
+  const dir = Math.atan2(tc.y - c.y, tc.x - c.x);
+  spawnMuzzle(state, c.x + Math.cos(dir) * 0.6, c.y + Math.sin(dir) * 0.6, dir);
   state.projectiles.push({
     x: c.x, y: c.y,
     tx: tc.x, ty: tc.y,
-    dir: Math.atan2(tc.y - c.y, tc.x - c.x),
+    dir,
     targetId: to.id,
     sourceId: from.id,
     sourceFaction: from.faction,
@@ -147,11 +149,20 @@ export function updateProjectiles(state: GameState, dt: number): void {
       } else {
         const target = units.find(u => u.id === p.targetId) ?? buildings.find(b => b.id === p.targetId);
         if (target && !target.dead) damageEntity(state, target, p.dmg, attacker);
-        spawnExplosion(state, p.tx, p.ty, 0.4);
+        spawnImpact(state, p.tx, p.ty);
       }
     } else {
       p.x += (dx / d) * step;
       p.y += (dy / d) * step;
+      // Smoke / exhaust trail for missiles (throttled so we don't flood fx)
+      if ((p.kind === 'rocket' || p.kind === 'deathHand') && Math.random() < 0.6) {
+        state.fx.push({
+          x: p.x, y: p.y,
+          scale: p.kind === 'deathHand' ? 0.6 : 0.35,
+          t: 0, life: 0.4 + Math.random() * 0.3, kind: 'smoke',
+          vx: (Math.random() - 0.5) * 0.2, vy: -0.1 - Math.random() * 0.15,
+        });
+      }
     }
   }
 

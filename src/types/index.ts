@@ -151,15 +151,33 @@ export interface Projectile {
 }
 
 // ── Effect ──────────────────────────────────────────────────
+export type EffectKind =
+  | 'expl'      // fireball flash (explosion core)
+  | 'shock'     // expanding shockwave ring
+  | 'spark'     // bright debris ember, flies outward
+  | 'smoke'     // dark smoke puff, rises & drifts
+  | 'dust'      // sand kick-up behind vehicles / impacts
+  | 'muzzle'    // oriented muzzle flash at a gun barrel
+  | 'wormtrail' // sand churn over a travelling sandworm
+  | 'bloom'     // spice bloom burst
+  | 'corpse';   // crushed infantry decal
+
 export interface Effect {
   x: number;
   y: number;
   scale: number;
   t: number;
   life: number;
-  kind: 'expl' | 'wormtrail' | 'bloom' | 'corpse';
+  kind: EffectKind;
   /** corpse only: faction colour for the body */
   faction?: FactionId;
+  /** optional drift velocity (tiles/sec) — applied each tick to x/y */
+  vx?: number;
+  vy?: number;
+  /** optional orientation (radians) for directional effects (muzzle flash) */
+  rot?: number;
+  /** optional colour override (sparks/embers) */
+  col?: number;
 }
 
 // ── Power ───────────────────────────────────────────────────

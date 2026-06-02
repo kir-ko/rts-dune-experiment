@@ -4,7 +4,7 @@
  * syncScene() updates the PixiJS scene graph each frame.
  */
 import {
-  Application, Container, Graphics, Sprite, Text,
+  Application, Container, Graphics, Sprite, Text, BLEND_MODES,
 } from 'pixi.js';
 import type { GameState, BuildingKind, UnitKind } from '../types/index.js';
 import { TILE, MAP_W, MAP_H, VIEW_W, VIEW_H } from '../constants/map.js';
@@ -79,6 +79,10 @@ export function createScene(app: Application): SceneLayers {
   app.stage.addChild(fxC);
   app.stage.addChild(airC);
   app.stage.addChild(fogGfx);
+  // Screen-fixed atmospheric vignette — warm, darkened edges sell the harsh
+  // desert sun. Sits above the world/fog but below interactive UI overlays.
+  const vignette = makeVignette();
+  app.stage.addChild(vignette);
   app.stage.addChild(uiC);
   app.stage.addChild(placementGfx);
   app.stage.addChild(selBoxGfx);
@@ -90,6 +94,29 @@ export function createScene(app: Application): SceneLayers {
     placementPreview: placementGfx,
     selectionBox: selBoxGfx,
   };
+}
+
+/**
+ * Build a screen-sized vignette sprite via a Canvas2D radial gradient.
+ * Transparent centre → warm-dark corners. Drawn once, never updated.
+ */
+function makeVignette(): Sprite {
+  const c = document.createElement('canvas');
+  c.width = VIEW_W;
+  c.height = VIEW_H;
+  const ctx = c.getContext('2d')!;
+  const grad = ctx.createRadialGradient(
+    VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.34,
+    VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.78,
+  );
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(0.75, 'rgba(24,12,2,0.22)');
+  grad.addColorStop(1, 'rgba(16,8,0,0.5)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const sp = Sprite.from(c);
+  sp.eventMode = 'none';
+  return sp;
 }
 
 // ── Full render pass ──────────────────────────────────────────
@@ -469,6 +496,15 @@ function renderWorms(state: GameState, layers: SceneLayers, camX: number, camY: 
 }
 
 // ── Projectiles ───────────────────────────────────────────────
+// Additive glow halo under each projectile makes tracers/rockets pop against
+// the dark desert. Colour + radius vary by kind.
+const PROJ_GLOW: Record<string, { col: number; r: number }> = {
+  bullet:    { col: 0xffe060, r: 3 },
+  shell:     { col: 0xffae40, r: 5 },
+  rocket:    { col: 0xff8030, r: 5 },
+  sonic:     { col: 0x88ccff, r: 7 },
+  deathHand: { col: 0xff5050, r: 9 },
+};
 function renderProjectiles(state: GameState, layers: SceneLayers, camX: number, camY: number): void {
   const container = layers.projectiles;
   // Destroy all old, re-add — projectiles are short-lived
@@ -476,75 +512,167 @@ function renderProjectiles(state: GameState, layers: SceneLayers, camX: number, 
 
   for (const p of state.projectiles) {
     if (fogAt(state, Math.floor(p.x), Math.floor(p.y)) < 2) continue;
+    const px = p.x * TILE - camX, py = p.y * TILE - camY;
+
+    // Glow halo (additive)
+    const glowDef = PROJ_GLOW[p.kind];
+    if (glowDef) {
+      const glow = new Graphics();
+      glow.blendMode = BLEND_MODES.ADD;
+      glow.beginFill(glowDef.col, 0.55);
+      glow.drawCircle(0, 0, glowDef.r);
+      glow.endFill();
+      glow.beginFill(glowDef.col, 0.3);
+      glow.drawCircle(0, 0, glowDef.r * 1.7);
+      glow.endFill();
+      glow.x = px; glow.y = py;
+      container.addChild(glow);
+    }
+
     const key = `proj_${p.kind}`;
     const tex = spriteCache.get(key);
     if (!tex) continue;
     const sp = new Sprite(tex);
     sp.anchor.set(0.5);
-    sp.x = p.x * TILE - camX;
-    sp.y = p.y * TILE - camY;
+    sp.x = px;
+    sp.y = py;
     sp.rotation = p.dir;
     container.addChild(sp);
   }
 }
 
-// ── Explosion effects ─────────────────────────────────────────
+// ── Explosion / particle effects ──────────────────────────────
 function renderEffects(state: GameState, layers: SceneLayers, camX: number, camY: number): void {
   const container = layers.fx;
   container.removeChildren();
 
   for (const ef of state.fx) {
     if (fogAt(state, Math.floor(ef.x), Math.floor(ef.y)) < 2) continue;
-    const r2 = ef.t / ef.life;
+    const r2 = ef.t / ef.life;           // 0 → 1 over lifetime
     const alpha = 1 - r2;
     const g = new Graphics();
 
-    if (ef.kind === 'wormtrail') {
-      const rad = (4 + 8 * r2) * ef.scale;
-      g.beginFill(0x9c7838, alpha * 0.7);
-      g.drawCircle(0, 0, rad);
-      g.endFill();
-      g.beginFill(0x3a2a14, alpha * 0.4);
-      g.drawCircle(0, 0, rad * 0.6);
-      g.endFill();
-    } else if (ef.kind === 'corpse') {
-      // Crushed infantry — flattened body with a blood splat. Fades over `life`.
-      // Stays mostly opaque for the first half, then quickly fades.
-      const fadeAlpha = Math.min(1, 2 * (1 - r2));
-      // Blood splat (irregular dark red)
-      g.beginFill(0x6a1010, fadeAlpha * 0.85);
-      g.drawEllipse(0, 0, 6 * ef.scale, 4 * ef.scale);
-      g.endFill();
-      g.beginFill(0x4a0808, fadeAlpha * 0.9);
-      g.drawEllipse(-2, 1, 3, 2);
-      g.drawEllipse(3, -1, 2, 2);
-      g.endFill();
-      // Flattened figure outline (faction-tinted)
-      const ftcol = ef.faction === 'atreides' ? 0x3a78d8
-                  : ef.faction === 'harkonnen' ? 0xcc2424
-                  : 0x2c9c44;
-      g.beginFill(ftcol, fadeAlpha * 0.6);
-      g.drawRect(-3, -2, 6, 4);
-      g.endFill();
-      g.beginFill(0x000000, fadeAlpha * 0.7);
-      g.drawRect(-3, -2, 6, 1); // helmet/silhouette accent
-      g.endFill();
-    } else if (ef.kind === 'bloom') {
-      // Spice bloom: orange burst that fades to ring
-      const rad = (12 + 28 * r2) * ef.scale;
-      g.beginFill(0xff8c2a, alpha * 0.8);
-      g.drawCircle(0, 0, rad);
-      g.endFill();
-      g.lineStyle(2, 0xffd860, alpha);
-      g.drawCircle(0, 0, rad * 1.1);
-    } else {
-      const rad = (8 + 24 * r2) * ef.scale;
-      g.beginFill(0xff6420, alpha);
-      g.drawCircle(0, 0, rad);
-      g.endFill();
-      g.beginFill(0xffffc8, alpha * 0.7);
-      g.drawCircle(0, 0, rad * 0.5);
-      g.endFill();
+    switch (ef.kind) {
+      case 'expl': {
+        // Layered fireball: deep-orange body, amber mid, white-hot core (additive).
+        g.blendMode = BLEND_MODES.ADD;
+        const rad = (5 + 20 * r2) * ef.scale;
+        g.beginFill(0xff5418, alpha * 0.55);
+        g.drawCircle(0, 0, rad);
+        g.endFill();
+        g.beginFill(0xffa830, alpha * 0.8);
+        g.drawCircle(0, 0, rad * 0.62);
+        g.endFill();
+        g.beginFill(0xfff2c0, alpha * 0.95);
+        g.drawCircle(0, 0, rad * 0.3);
+        g.endFill();
+        break;
+      }
+      case 'shock': {
+        // Thin expanding ring — fades fast, gives the blast a snap.
+        const rad = (3 + 34 * r2) * ef.scale;
+        g.lineStyle(Math.max(1, 2.5 * (1 - r2)), 0xffe6b0, alpha * 0.7);
+        g.drawCircle(0, 0, rad);
+        break;
+      }
+      case 'spark': {
+        // Bright ember with a short motion streak in its travel direction.
+        g.blendMode = BLEND_MODES.ADD;
+        const col = ef.col ?? 0xffd860;
+        const s = 0.7 + (1 - r2) * 2 * ef.scale;
+        if (ef.vx || ef.vy) {
+          g.lineStyle(s * 0.9, col, alpha * 0.8);
+          g.moveTo(0, 0);
+          g.lineTo(-(ef.vx ?? 0) * 2.4, -(ef.vy ?? 0) * 2.4);
+        }
+        g.beginFill(col, alpha);
+        g.drawCircle(0, 0, s);
+        g.endFill();
+        break;
+      }
+      case 'smoke': {
+        // Expanding soft grey puff, normal blend so it darkens the scene.
+        const rad = (4 + 12 * r2) * ef.scale;
+        const a = (1 - r2) * 0.4;
+        g.beginFill(0x2a2218, a);
+        g.drawCircle(0, 0, rad);
+        g.endFill();
+        g.beginFill(0x4a3c2a, a * 0.7);
+        g.drawCircle(-rad * 0.22, -rad * 0.22, rad * 0.62);
+        g.endFill();
+        break;
+      }
+      case 'dust': {
+        // Pale sand kick-up — lighter and shorter-lived than smoke.
+        const rad = (3 + 7 * r2) * ef.scale;
+        const a = (1 - r2) * 0.38;
+        g.beginFill(0xcaa868, a);
+        g.drawCircle(0, 0, rad);
+        g.endFill();
+        g.beginFill(0xe4c890, a * 0.6);
+        g.drawCircle(-rad * 0.2, -rad * 0.2, rad * 0.55);
+        g.endFill();
+        break;
+      }
+      case 'muzzle': {
+        // Oriented flash: bright petal pointing along the firing direction.
+        g.blendMode = BLEND_MODES.ADD;
+        g.rotation = ef.rot ?? 0;
+        const len = 9 * (1 - r2 * 0.5);
+        g.beginFill(0xffe9a0, alpha);
+        g.moveTo(0, -2.4);
+        g.lineTo(len, 0);
+        g.lineTo(0, 2.4);
+        g.lineTo(-2, 0);
+        g.closePath();
+        g.endFill();
+        g.beginFill(0xffffff, alpha * 0.9);
+        g.drawCircle(0, 0, 2.4 * alpha + 0.6);
+        g.endFill();
+        break;
+      }
+      case 'wormtrail': {
+        const rad = (4 + 8 * r2) * ef.scale;
+        g.beginFill(0x9c7838, alpha * 0.7);
+        g.drawCircle(0, 0, rad);
+        g.endFill();
+        g.beginFill(0x3a2a14, alpha * 0.4);
+        g.drawCircle(0, 0, rad * 0.6);
+        g.endFill();
+        break;
+      }
+      case 'corpse': {
+        // Crushed infantry — flattened body with a blood splat. Fades over `life`.
+        const fadeAlpha = Math.min(1, 2 * (1 - r2));
+        g.beginFill(0x6a1010, fadeAlpha * 0.85);
+        g.drawEllipse(0, 0, 6 * ef.scale, 4 * ef.scale);
+        g.endFill();
+        g.beginFill(0x4a0808, fadeAlpha * 0.9);
+        g.drawEllipse(-2, 1, 3, 2);
+        g.drawEllipse(3, -1, 2, 2);
+        g.endFill();
+        const ftcol = ef.faction === 'atreides' ? 0x3a78d8
+                    : ef.faction === 'harkonnen' ? 0xcc2424
+                    : 0x2c9c44;
+        g.beginFill(ftcol, fadeAlpha * 0.6);
+        g.drawRect(-3, -2, 6, 4);
+        g.endFill();
+        g.beginFill(0x000000, fadeAlpha * 0.7);
+        g.drawRect(-3, -2, 6, 1);
+        g.endFill();
+        break;
+      }
+      case 'bloom': {
+        // Spice bloom: orange burst that fades to a ring.
+        g.blendMode = BLEND_MODES.ADD;
+        const rad = (12 + 28 * r2) * ef.scale;
+        g.beginFill(0xff8c2a, alpha * 0.8);
+        g.drawCircle(0, 0, rad);
+        g.endFill();
+        g.lineStyle(2, 0xffd860, alpha);
+        g.drawCircle(0, 0, rad * 1.1);
+        break;
+      }
     }
     g.x = ef.x * TILE - camX;
     g.y = ef.y * TILE - camY;
