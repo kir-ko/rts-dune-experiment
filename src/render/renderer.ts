@@ -6,7 +6,7 @@
 import {
   Application, Container, Graphics, Sprite, Text,
 } from 'pixi.js';
-import type { GameState, BuildingKind } from '../types/index.js';
+import type { GameState, BuildingKind, UnitKind } from '../types/index.js';
 import { TILE, MAP_W, MAP_H, VIEW_W, VIEW_H } from '../constants/map.js';
 import { BUILD_DEFS } from '../constants/buildings.js';
 import { spriteCache, tileKey, unitKey, buildKey } from './sprites.js';
@@ -27,6 +27,30 @@ export interface SceneLayers {
   uiLayer: Container;
   placementPreview: Graphics;
   selectionBox: Graphics;
+}
+
+/**
+ * On-screen display scale per unit kind. Sprites are authored ~24px (≈1 tile);
+ * these multipliers enlarge them for readability and establish a clear size
+ * hierarchy (infantry < trike < tank < heavy). Textures use NEAREST scaling
+ * (see sprites.ts) so upscaling stays crisp pixel-art, not blurry.
+ */
+const SPRITE_SCALE: Record<UnitKind, number> = {
+  infantry: 1.2,
+  fremen: 1.2,
+  sardaukar: 1.25,
+  trike: 1.4,
+  tank: 1.6,
+  siegeTank: 1.75,
+  launcher: 1.55,
+  harvester: 1.5,
+  special: 1.7,
+  stealthTank: 1.5,
+  carryall: 1.5,
+  ornithopter: 1.45,
+};
+function spriteScale(kind: UnitKind): number {
+  return SPRITE_SCALE[kind] ?? 1.3;
 }
 
 // Reused sprite pools — separate maps per layer to avoid cross-layer cleanup collisions
@@ -277,12 +301,13 @@ function syncUnitLayer(
     let cont = spriteMap.get(u.id);
     if (!cont) {
       cont = new Container();
-      // Shadow (ellipse)
+      const sc = spriteScale(u.kind);
+      // Shadow (ellipse) — scales with the (now larger) unit body
       const shadow = new Graphics();
       shadow.name = 'shadow';
       shadow.beginFill(0x000000, isAir ? 0.45 : 0.35);
-      if (isAir) shadow.drawEllipse(8, 8, 12, 6);
-      else shadow.drawEllipse(0, 4, 8, 4);
+      if (isAir) shadow.drawEllipse(8 * sc, 8 * sc, 12 * sc, 6 * sc);
+      else shadow.drawEllipse(0, 4 * sc, 8 * sc, 4 * sc);
       shadow.endFill();
       cont.addChild(shadow);
 
@@ -291,6 +316,7 @@ function syncUnitLayer(
       if (tex) {
         const sp = new Sprite(tex);
         sp.anchor.set(0.5);
+        sp.scale.set(sc);
         sp.name = 'body';
         cont.addChild(sp);
       }
@@ -303,6 +329,7 @@ function syncUnitLayer(
         if (turretTex) {
           const tsp = new Sprite(turretTex);
           tsp.anchor.set(0.5);
+          tsp.scale.set(sc);
           tsp.name = 'turret';
           cont.addChild(tsp);
         }
@@ -342,17 +369,24 @@ function syncUnitLayer(
     const bar = cont.getChildByName('bar') as Graphics;
     bar.clear();
     const hpr = u.hp / u.maxHp;
-    const bw = 14;
+    // Bar geometry follows the scaled sprite so it clears the (larger) body.
+    const sc = spriteScale(u.kind);
+    const texH = body ? body.texture.height : 24;
+    const texW = body ? body.texture.width : 24;
+    const halfH = (texH * sc) / 2;
+    const bw = Math.max(14, Math.round(texW * sc * 0.7));
+    const barTop = -halfH - 5;
     // Always show HP bar for all units
-    bar.beginFill(0x000000, 0.7); bar.drawRect(-bw/2, -10, bw, 3); bar.endFill();
+    bar.beginFill(0x000000, 0.7); bar.drawRect(-bw/2, barTop, bw, 3); bar.endFill();
     const hpCol = hpr > 0.6 ? 0x33aa33 : hpr > 0.3 ? 0xcccc88 : 0xcc3333;
-    bar.beginFill(hpCol); bar.drawRect(-bw/2+1, -9, Math.max(0, (bw-2)*hpr), 1); bar.endFill();
+    bar.beginFill(hpCol); bar.drawRect(-bw/2+1, barTop+1, Math.max(0, (bw-2)*hpr), 1); bar.endFill();
 
     // Harvester spice cargo bar
     if (u.kind === 'harvester') {
       const fill = u.spice / 500;
-      bar.beginFill(0x1a1208); bar.drawRect(-bw/2, 10, bw, 2); bar.endFill();
-      bar.beginFill(0xff8c2a); bar.drawRect(-bw/2+1, 11, (bw-2)*fill, 1); bar.endFill();
+      const cy = halfH + 1;
+      bar.beginFill(0x1a1208); bar.drawRect(-bw/2, cy, bw, 2); bar.endFill();
+      bar.beginFill(0xff8c2a); bar.drawRect(-bw/2+1, cy+1, (bw-2)*fill, 1); bar.endFill();
     }
 
     // Mining dust animation
@@ -383,7 +417,8 @@ function syncUnitLayer(
     ring.clear();
     if (state.selection.includes(u.id)) {
       ring.lineStyle(1.5, 0xffc870);
-      ring.drawCircle(0, 0, (body?.width ?? 14) * 0.55);
+      // Stable radius from the texture (not rotated AABB) so it doesn't pulse.
+      ring.drawCircle(0, 0, Math.max(texW, texH) * sc * 0.55);
     }
   }
 }

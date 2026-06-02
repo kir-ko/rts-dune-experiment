@@ -4,3 +4,6 @@ dist/
 Archive.zip
 .DS_Store
 .claude/
+
+# Внутренние инструкции по графике (не для репозитория)
+docs/
