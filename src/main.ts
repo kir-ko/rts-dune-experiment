@@ -399,8 +399,20 @@ function tick(dt: number): void {
 }
 
 // ── Unit separation ───────────────────────────────────────────
+// Collision radii match the visual sprite scale (see renderer.ts SPRITE_SCALE).
+// Separation threshold = radA + radB so large units don't clip into each other.
+const UNIT_COL_RADIUS: Partial<Record<import('./types/index.js').UnitKind, number>> = {
+  infantry: 0.40, fremen: 0.40, sardaukar: 0.42,
+  trike: 0.48, stealthTank: 0.50,
+  tank: 0.56, harvester: 0.54, launcher: 0.54,
+  siegeTank: 0.60,
+  special: 0.62,
+};
+function unitColRadius(kind: import('./types/index.js').UnitKind): number {
+  return UNIT_COL_RADIUS[kind] ?? 0.44;
+}
+
 function separateUnits(state: GameState): void {
-  const SEP = 0.68; // minimum tile distance between ground unit centres
   const alive = state.units.filter(u => !u.dead && !u.carried && !u.docked && u.kind !== 'carryall');
   for (let i = 0; i < alive.length; i++) {
     for (let j = i + 1; j < alive.length; j++) {
@@ -413,16 +425,17 @@ function separateUnits(state: GameState): void {
         const bCrushOnA = isCrusher(b) && isCrushable(a);
         if (aCrushOnB || bCrushOnA) continue;
       }
+      const sep = unitColRadius(a.kind) + unitColRadius(b.kind);
       const dx = b.x - a.x, dy = b.y - a.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 >= SEP * SEP) continue; // fast-path: already far enough
+      if (d2 >= sep * sep) continue; // fast-path: already far enough
       if (d2 < 0.0001) {
         // Exactly on top: push apart on a fixed axis
         a.x -= 0.2; b.x += 0.2;
         continue;
       }
       const d = Math.sqrt(d2);
-      const push = (SEP - d) * 0.5;
+      const push = (sep - d) * 0.5;
       const nx = dx / d, ny = dy / d;
       a.x -= nx * push; a.y -= ny * push;
       b.x += nx * push; b.y += ny * push;
