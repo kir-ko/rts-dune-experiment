@@ -3,7 +3,7 @@
  * All sprites are pre-rendered at startup and cached.
  * To add a new sprite: add a function, call it in generateSprites(), export the key.
  */
-import { Application, Graphics, RenderTexture, Texture } from 'pixi.js';
+import { Application, Graphics, RenderTexture, Texture, SCALE_MODES } from 'pixi.js';
 import type { FactionId, BuildingKind, UnitKind } from '../types/index.js';
 import { TILE } from '../constants/map.js';
 
@@ -41,7 +41,9 @@ function pxRect(g: Graphics, x: number, y: number, w: number, h: number, color: 
   g.beginFill(color); g.drawRect(x, y, w, h); g.endFill();
 }
 function storeAs(key: string, g: Graphics): Texture {
-  const tex = _app.renderer.generateTexture(g, { resolution: 1 });
+  // NEAREST so upscaled sprites (units render >1× — see SPRITE_SCALE) stay crisp
+  // pixel-art instead of going blurry. At 1× (tiles/buildings) it's a no-op.
+  const tex = _app.renderer.generateTexture(g, { resolution: 1, scaleMode: SCALE_MODES.NEAREST });
   spriteCache.set(key, tex);
   g.destroy();
   return tex;
